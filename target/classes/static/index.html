@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community Reporter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Community Reporter</h1>
+  <p>Report local issues and track their progress</p>
+</header>
+
+<main class="container">
+
+  <section class="panel">
+    <h2>Report an issue</h2>
+    <form id="form">
+      <input id="title" placeholder="Title" required>
+      <textarea id="description" placeholder="Describe the problem" required></textarea>
+      <div class="row">
+        <input id="location" placeholder="Location" required>
+        <select id="categoryId" required></select>
+      </div>
+      <div class="row">
+        <input id="reportedBy" placeholder="Your name" required>
+        <input id="photoUrl" placeholder="Photo URL (optional)">
+      </div>
+      <button type="submit">Submit report</button>
+      <div id="msg"></div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="list-head">
+      <h2>Issues</h2>
+      <select id="filter">
+        <option value="">All statuses</option>
+        <option value="REPORTED">Reported</option>
+        <option value="IN_PROGRESS">In progress</option>
+        <option value="RESOLVED">Resolved</option>
+      </select>
+    </div>
+    <div id="list"></div>
+  </section>
+
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const label = s => s.replace('_', ' ');
+const fmt = d => new Date(d).toLocaleString();
+
+async function loadCategories() {
+  const cats = await (await fetch('/api/categories')).json();
+  $('categoryId').innerHTML = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+async function loadIssues() {
+  const f = $('filter').value;
+  const issues = await (await fetch('/api/issues' + (f ? '?status=' + f : ''))).json();
+  $('list').innerHTML = issues.map(i => `
+    <article class="card ${i.status}">
+      <div class="card-top">
+        <div>
+          <h3>${esc(i.title)}</h3>
+          <span class="tag">${esc(i.categoryName)}</span>
+        </div>
+        <span class="badge ${i.status}">${label(i.status)}</span>
+      </div>
+      <p>${esc(i.description)}</p>
+      ${i.photoUrl ? `<img src="${esc(i.photoUrl)}" alt="Issue photo">` : ''}
+      <div class="meta">${esc(i.location)} &middot; by ${esc(i.reportedBy)} &middot; ${fmt(i.createdAt)}</div>
+      <div class="card-actions">
+        Update status:
+        <select onchange="setStatus(${i.id}, this.value)">
+          ${['REPORTED','IN_PROGRESS','RESOLVED'].map(s => `<option value="${s}" ${s===i.status?'selected':''}>${label(s)}</option>`).join('')}
+        </select>
+      </div>
+    </article>`).join('') || '<p class="empty">No issues found.</p>';
+}
+
+async function setStatus(id, status) {
+  await fetch(`/api/issues/${id}/status`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status})
+  });
+  loadIssues();
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    title: $('title').value, description: $('description').value,
+    location: $('location').value, photoUrl: $('photoUrl').value || null,
+    reportedBy: $('reportedBy').value, categoryId: Number($('categoryId').value)
+  };
+  const res = await fetch('/api/issues', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  if (res.ok) { $('form').reset(); $('msg').textContent = ''; loadIssues(); }
+  else { $('msg').textContent = JSON.stringify(await res.json()); }
+});
+
+$('filter').addEventListener('change', loadIssues);
+loadCategories().then(loadIssues);
+</script>
+</body>
+</html>
